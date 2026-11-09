@@ -20,6 +20,25 @@ static void die(const char *s) {
 
 int N = 801;
 int **grid;
+int *pac_low, *pac_hi;
+
+static void compute_boundary(void) {
+	pac_low = (int*)malloc(sizeof(int) * N);
+	pac_hi  = (int*)malloc(sizeof(int) * N);
+	int r = N/2;
+	for (int i = 0; i < N; i++) {
+		pac_low[i] = 0;
+		pac_hi[i] = -1;
+		for (int j = 0; j <= MAX(i, N-1-i); j++) {
+			if ((i - r) * (i - r) + (j - r) * (j - r) <= r * r) {
+				if (pac_hi[i] < 0) {
+					pac_low[i] = j;
+				}
+				pac_hi[i] = j;
+			}
+		}
+	}
+}
 
 // you can also use this function to debug print your sandpile
 static void render(char *filename) {
@@ -77,9 +96,7 @@ static void stabilize() {
   do {
     changed = 0;
     for (int i = 0; i < N; ++i) {
-      for (int j = 0; j <= MAX(i, N - 1 - i); ++j) {
-        if ((i - N / 2) * (i - N / 2) + (j - N / 2) * (j - N / 2) <=
-            (N / 2) * (N / 2)) {
+      for (int j = pac_low[i]; j <= pac_hi[i]; ++j) {
           if (grid[i][j] < 4)
             continue;
           changed = 1; // topple it
@@ -92,7 +109,6 @@ static void stabilize() {
             grid[i + 1][j]++;
           if (j < N - 1)
             grid[i][j + 1]++;
-        }
       }
     }
   } while (changed);
@@ -125,6 +141,8 @@ int main(int argc, char **argv) {
     die("grid size must be a positive int");
   N = (int)parsed;
 
+  compute_boundary();
+  
   grid = (int **)malloc(N * sizeof(int *));
   for (int i = 0; i < N; ++i) {
     grid[i] = (int *)malloc(N * sizeof(int));
