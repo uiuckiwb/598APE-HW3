@@ -93,6 +93,7 @@ static void render(char *filename) {
 
 static void stabilize() {
   int changed = 0;
+  if ( N % 2 == 0 ) {
   do {
     changed = 0;
     for (int i = 0; i < N; ++i) {
@@ -112,6 +113,33 @@ static void stabilize() {
       }
     }
   } while (changed);
+  }
+  else {
+  int h = N / 2;
+  do {
+    changed = 0;
+    for (int i = 0; i <= h; ++i) {
+      for (int j = pac_low[i]; j <= pac_hi[i]; ++j) {
+          if (grid[i][j] < 4)
+            continue;
+          changed = 1; // topple it
+          grid[i][j] -= 4;
+          if (i > 0)
+            grid[i - 1][j]++;
+          if (j > 0)
+            grid[i][j - 1]++;
+          if (i < h)
+            grid[i + 1][j] += (i == h - 1) ? 2 : 1; //add 2 from the other row if its the last one in the half
+          if (j < N - 1)
+            grid[i][j + 1]++;
+      }
+    }
+  } while (changed);
+
+  for (int i = h + 1; i < N; i++) {
+    memcpy(grid[i], grid[N - 1 - i], N * sizeof(int));
+  }
+  }
 }
 
 void find_identity() {
