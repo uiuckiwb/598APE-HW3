@@ -21,9 +21,11 @@ static void die(const char *s) {
 int N = 801;
 //int **grid;
 
-int *grid, *Q;
+int *grid, *grid_next;
 int W;
 int *pac_low, *pac_hi;
+int *pad_low, *pad_hi;
+int *win_low, *win_hi;
 
 #define GRID(i, j) grid[(size_t)((i)+1) * W + ((j) + 1)]
 
@@ -42,6 +44,37 @@ static void compute_boundary(void) {
 				pac_hi[i] = j;
 			}
 		}
+	}
+}
+
+static void compute_window(void) {
+	pad_low = (int*)malloc(sizeof(int) * (N + 2));
+	pad_hi  = (int*)malloc(sizeof(int) * (N + 2));
+	win_low = (int*)malloc(sizeof(int) * N);
+	win_hi  = (int*)malloc(sizeof(int) * N);
+	if (!pad_low || !pad_hi || !win_low || !win_hi)
+		die("malloc failed for row windows");
+	pad_low[0] = pad_low[N + 1] = 1;
+	pad_hi[0]  = pad_hi[N + 1]  = 0;
+	for (int i = 0; i < N; i++) {
+		pad_low[i + 1] = pac_low[i];
+		pad_hi[i + 1]  = pac_hi[i];
+	}
+	for (int i = 0; i < N; i++) {
+		int lo = N, hi = -1;
+		for (int k = i - 1; k <= i + 1; k++) { 
+			int l = pad_low[k + 1], r = pad_hi[k + 1];
+			if (l > r)
+				continue;
+			if (k == i) { 
+				l -= 1;
+				r += 1;
+			}
+			lo = MIN(lo, l);
+			hi = MAX(hi, r);
+		}
+		win_low[i] = MAX(lo, 0);
+		win_hi[i]  = MIN(hi, N - 1);
 	}
 }
 
@@ -100,33 +133,52 @@ static void stabilize(void) {
   const int n = N, w = W;
   const int sym = n % 2, h = n / 2;
   const int rows = sym ? h + 1 : n;   
-  int *restrict q = Q + 2;            
+  memcpy(grid_next, grid, (size_t)(n + 2) * w * sizeof(int));
   int changed;
-  do {
-    changed = 0;
-    for (int i = 0; i < rows; ++i) {
-      int *restrict up = grid + (size_t)i * w + 1;   
-      int *restrict cur = up + w;                 
-      int *restrict dn = cur + w;                 
-      const int lo = pac_low[i], hi = pac_hi[i];
-      int any = 0;
-      for (int j = lo; j <= hi; ++j) {            
-        int v = cur[j] >> 2;
-        q[j] = v;
-        cur[j] &= 3;
-        any |= v;
-      }
-      if (!any) continue;                         
-      changed = 1;
-      const int dmul = (sym && i == h - 1) ? 2 : 1;
-      const int dgo = !(sym && i == h);
-      for (int j = lo; j <= hi; ++j) up[j] += q[j];
-      if (dgo)
-        for (int j = lo; j <= hi; ++j) dn[j] += dmul * q[j];
-      for (int j = lo - 1; j <= hi + 1; ++j) cur[j] += q[j - 1] + q[j + 1];
-      for (int j = lo; j <= hi; ++j) q[j] = 0;
+  #pragma omp parallel
+  {
+    const int *src = grid;
+    int *dst = grid_next;
+    int tchanged;
+    do {
+      #pragma omp single   
+      changed = 0;
+      #pragma omp for schedule(static, 4) reduction(|:changed)
+      for (int i = 0; i < rows; ++i) {
+	const int d = (sym && i == h) ? i - 1 : i + 1;
+        const int *restrict up = src + (size_t)i * w + 1;   
+        const int *restrict cur = up + w;                 
+        const int *restrict dn = src + (size_t)(d + 1) * w + 1;  //dn is just up for the middle row
+        int *restrict out = dst + (size_t)(i + 1) * w + 1; 
+
+	const int up_lo = pad_low[i], up_hi = pad_hi[i];
+        const int lo = pad_low[i + 1], hi = pad_hi[i + 1];
+        const int dn_lo = pad_low[d + 1], dn_hi = pad_hi[d + 1];
+        const int jl = win_low[i], jh = win_hi[i];
+        int any = 0;
+        for (int j = jl; j <= jh; ++j) {
+          int qu = (j >= up_lo && j <= up_hi) ? up[j] >> 2 : 0;
+          int qd = (j >= dn_lo && j <= dn_hi) ? dn[j] >> 2 : 0;
+          int ql = (j - 1 >= lo && j - 1 <= hi) ? cur[j - 1] >> 2 : 0;
+          int qr = (j + 1 >= lo && j + 1 <= hi) ? cur[j + 1] >> 2 : 0;
+          int qc = (j >= lo && j <= hi) ? cur[j] >> 2 : 0;
+          out[j] = cur[j] - 4 * qc + qu + qd + ql + qr;
+          any |= qc;
+        }
+        changed |= any;
+      }   
+      tchanged = changed;
+      int *tmp = (int*)src;
+      src = dst;
+      dst = tmp;
+      #pragma omp barrier
+    } while (tchanged);
+    #pragma omp single
+    {
+      grid = (int *)src; //fix the double buffer flip floppin
+      grid_next = dst;
     }
-  } while (changed);
+  }
   if (sym)
     for (int i = h + 1; i < n; ++i)
       memcpy(&GRID(i, 0), &GRID(n - 1 - i, 0), n * sizeof(int));
@@ -161,16 +213,23 @@ int main(int argc, char **argv) {
   
   W = N + 2;
   grid = (int *)calloc((size_t)(N + 2) * W, sizeof(int));
-  Q = (int *)calloc((size_t)W + 4, sizeof(int));
+  grid_next = (int *)calloc((size_t)(N + 2) * W, sizeof(int));
+
 
   compute_boundary();
+  compute_window();
 
   find_identity();
 
   render("identity.png");
   free(grid);
-  free(Q);
+  free(grid_next);
   free(pac_low);
   free(pac_hi);
+  free(pad_low);
+  free(pad_hi);
+  free(win_low);
+  free(win_hi);
+
   return EXIT_SUCCESS;
 }
