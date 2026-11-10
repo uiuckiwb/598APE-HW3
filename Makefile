@@ -1,7 +1,7 @@
 FUNC := gcc
 copt := -c
 OBJ_DIR := ./bin/
-FLAGS := -O3 -lm -g -Werror -march=native -fno-omit-frame-pointer -fopenmp
+FLAGS := -O3 -lm -g -Werror -march=native -fno-omit-frame-pointer -fopenmp -mprefer-vector-width=512
 
 C_FILES := $(wildcard src/*.c)
 OBJ_FILES := $(addprefix $(OBJ_DIR),$(notdir $(C_FILES:.c=.obj)))
