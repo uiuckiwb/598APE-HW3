@@ -21,7 +21,7 @@ static void die(const char *s) {
 int N = 801;
 //int **grid;
 
-int *grid, *grid_next;
+int16_t *grid, *grid_next;
 int W;
 int *pac_low, *pac_hi;
 int *pad_low, *pad_hi;
@@ -133,12 +133,12 @@ static void stabilize(void) {
   const int n = N, w = W;
   const int sym = n % 2, h = n / 2;
   const int rows = sym ? h + 1 : n;   
-  memcpy(grid_next, grid, (size_t)(n + 2) * w * sizeof(int));
+  memcpy(grid_next, grid, (size_t)(n + 2) * w * sizeof(int16_t));
   int changed;
   #pragma omp parallel
   {
-    const int *src = grid;
-    int *dst = grid_next;
+    const int16_t *src = grid;
+    int16_t *dst = grid_next;
     int tchanged;
     do {
       #pragma omp single   
@@ -146,10 +146,10 @@ static void stabilize(void) {
       #pragma omp for schedule(static, 4) reduction(|:changed)
       for (int i = 0; i < rows; ++i) {
 	const int d = (sym && i == h) ? i - 1 : i + 1;
-        const int *restrict up = src + (size_t)i * w + 1;   
-        const int *restrict cur = up + w;                 
-        const int *restrict dn = src + (size_t)(d + 1) * w + 1;  //dn is just up for the middle row
-        int *restrict out = dst + (size_t)(i + 1) * w + 1; 
+        const int16_t *restrict up = src + (size_t)i * w + 1;   
+        const int16_t *restrict cur = up + w;                 
+        const int16_t *restrict dn = src + (size_t)(d + 1) * w + 1;  //dn is just up for the middle row
+        int16_t *restrict out = dst + (size_t)(i + 1) * w + 1; 
 
 	const int up_lo = pad_low[i], up_hi = pad_hi[i];
         const int lo = pad_low[i + 1], hi = pad_hi[i + 1];
@@ -157,31 +157,31 @@ static void stabilize(void) {
         const int jl = win_low[i], jh = win_hi[i];
         int any = 0;
         for (int j = jl; j <= jh; ++j) {
-          int qu = (j >= up_lo && j <= up_hi) ? up[j] >> 2 : 0;
-          int qd = (j >= dn_lo && j <= dn_hi) ? dn[j] >> 2 : 0;
-          int ql = (j - 1 >= lo && j - 1 <= hi) ? cur[j - 1] >> 2 : 0;
-          int qr = (j + 1 >= lo && j + 1 <= hi) ? cur[j + 1] >> 2 : 0;
-          int qc = (j >= lo && j <= hi) ? cur[j] >> 2 : 0;
+          int16_t qu = (j >= up_lo && j <= up_hi) ? up[j] >> 2 : 0;
+          int16_t qd = (j >= dn_lo && j <= dn_hi) ? dn[j] >> 2 : 0;
+          int16_t ql = (j - 1 >= lo && j - 1 <= hi) ? cur[j - 1] >> 2 : 0;
+          int16_t qr = (j + 1 >= lo && j + 1 <= hi) ? cur[j + 1] >> 2 : 0;
+          int16_t qc = (j >= lo && j <= hi) ? cur[j] >> 2 : 0;
           out[j] = cur[j] - 4 * qc + qu + qd + ql + qr;
           any |= qc;
         }
         changed |= any;
       }   
       tchanged = changed;
-      int *tmp = (int*)src;
+      int16_t *tmp = (int16_t*)src;
       src = dst;
       dst = tmp;
       #pragma omp barrier
     } while (tchanged);
     #pragma omp single
     {
-      grid = (int *)src; //fix the double buffer flip floppin
+      grid = (int16_t *)src; //fix the double buffer flip floppin
       grid_next = dst;
     }
   }
   if (sym)
     for (int i = h + 1; i < n; ++i)
-      memcpy(&GRID(i, 0), &GRID(n - 1 - i, 0), n * sizeof(int));
+      memcpy(&GRID(i, 0), &GRID(n - 1 - i, 0), n * sizeof(int16_t));
 }
 
 void find_identity() {
@@ -212,8 +212,8 @@ int main(int argc, char **argv) {
   N = (int)parsed;
   
   W = N + 2;
-  grid = (int *)calloc((size_t)(N + 2) * W, sizeof(int));
-  grid_next = (int *)calloc((size_t)(N + 2) * W, sizeof(int));
+  grid = (int16_t *)calloc((size_t)(N + 2) * W, sizeof(int16_t));
+  grid_next = (int16_t *)calloc((size_t)(N + 2) * W, sizeof(int16_t));
 
 
   compute_boundary();
